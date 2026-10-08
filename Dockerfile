@@ -1,8 +1,11 @@
 FROM python:3.11-slim
 
-# ffmpeg нужен для склейки видео+аудио на YouTube и для многих других сервисов
+# Устанавливаем ffmpeg и Node.js для bgutil-ytdlp-pot-provider
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
+    curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -12,7 +15,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
 
-# Render передаёт порт через переменную PORT
 ENV PORT=8000
 EXPOSE 8000
 
