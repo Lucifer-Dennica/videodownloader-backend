@@ -9,9 +9,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import yt_dlp
+from vk_url_scraper import VkScraper
 
 
-app = FastAPI(title="VideoDownloader Server", version="1.1.0")
+app = FastAPI(title="VideoDownloader Server", version="1.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -21,13 +22,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Мобильный User-Agent — как у настоящего пользователя приложения
 USER_AGENT = (
     "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
 )
 
-# Браузерный User-Agent для tikwm
 BROWSER_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -51,7 +50,7 @@ def root():
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": "yt-dlp+tikwm"}
+    return {"status": "ok", "service": "yt-dlp+tikwm+vk"}
 
 
 def build_format(quality: str, audio_only: bool) -> str:
@@ -125,8 +124,36 @@ def resolve_tiktok(url: str, audio_only: bool) -> dict:
     }
 
 
+def resolve_vk(url: str, audio_only: bool = False) -> dict:
+    """VK через vk-url-scraper (без cookies)."""
+    vk_username = os.environ.get("VK_USERNAME")
+    vk_password = os.environ.get("VK_PASSWORD")
+
+    if not vk_username or not vk_password:
+        raise ValueError("VK credentials не заданы (VK_USERNAME, VK_PASSWORD)")
+
+    scraper = VkScraper(vk_username, vk_password)
+    result = scraper.scrape(url)
+
+    if not result:
+        raise ValueError("VK: не удалось получить данные")
+
+    for item in result:
+        if item.get("type") == "video":
+            video_url = item.get("url")
+            if video_url:
+                return {
+                    "video_url": video_url,
+                    "thumbnail": item.get("thumbnail"),
+                    "title": item.get("title", "VK video"),
+                    "ext": "mp4",
+                }
+
+    raise ValueError("VK: видео не найдено в URL")
+
+
 def resolve_ytdlp(url: str, audio_only: bool, quality: str) -> dict:
-    """YouTube, Rutube, VK, SoundCloud, Reddit и т.д."""
+    """YouTube, Rutube, SoundCloud, Reddit и т.д."""
     opts = {
         "quiet": True,
         "no_warnings": True,
@@ -136,18 +163,13 @@ def resolve_ytdlp(url: str, audio_only: bool, quality: str) -> dict:
         "http_headers": {"User-Agent": USER_AGENT},
         "retries": 3,
         "socket_timeout": 20,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web", "mweb", "tv"],
+                "player_skip": ["webpage", "configs"],
+            }
+        },
     }
-
-    # Cookies (если заданы) — для YouTube / VK / Instagram
-    cookies_b64 = os.environ.get("YTDLP_COOKIES_B64")
-    if cookies_b64:
-        try:
-            cookies_path = "/tmp/cookies.txt"
-            with open(cookies_path, "wb") as f:
-                f.write(base64.b64decode(cookies_b64))
-            opts["cookiefile"] = cookies_path
-        except Exception as e:
-            print(f"Cookies decode failed: {e}")
 
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
@@ -192,6 +214,10 @@ def resolve_media(url: str, audio_only: bool = False, quality: str = "max") -> d
 
     if "tiktok.com" in lower or "vt.tiktok" in lower or "vm.tiktok" in lower:
         return resolve_tiktok(url, audio_only)
+
+    if "vk.com" in lower or "vkvideo.ru" in lower:
+        return resolve_vk(url, audio_only)
+
     return resolve_ytdlp(url, audio_only, quality)
 
 
