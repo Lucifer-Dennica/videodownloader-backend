@@ -1,0 +1,12 @@
+name: Keep Render Alive
+on:
+  schedule:
+    # Каждые 14 минут
+    - cron: '*/14 * * * *'
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Server
+        run: curl -sS -m 30 "${{ secrets.SERVER_URL }}/api/health" || echo "Server sleeping, will retry in 14 min"
