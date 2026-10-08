@@ -2,3 +2,5 @@ fastapi
 uvicorn[standard]
 pydantic
 yt-dlp[default,curl-cffi]
+bgutil-ytdlp-pot-provider
+vk-url-scraper
