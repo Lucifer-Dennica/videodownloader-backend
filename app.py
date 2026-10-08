@@ -11,9 +11,8 @@ from pydantic import BaseModel
 import yt_dlp
 
 
-app = FastAPI(title="VideoDownloader Server", version="1.0.0")
+app = FastAPI(title="VideoDownloader Server", version="1.1.0")
 
-# CORS — разрешаем запросы из браузера (тестер на localhost/file://)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,9 +21,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Мобильный User-Agent — как у настоящего пользователя приложения
 USER_AGENT = (
-    "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 "
+    "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+)
+
+# Браузерный User-Agent для tikwm
+BROWSER_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
 
@@ -64,11 +70,20 @@ def build_format(quality: str, audio_only: bool) -> str:
 
 
 def resolve_tiktok(url: str, audio_only: bool) -> dict:
-    """TikTok через tikwm — работает без блокировок."""
+    """TikTok через tikwm. Используем браузерные заголовки — иначе 403."""
     api = "https://tikwm.com/api/?url=" + urllib.parse.quote(url, safe="")
-    req = urllib.request.Request(api, headers={"User-Agent": USER_AGENT})
 
-    with urllib.request.urlopen(req, timeout=20) as r:
+    headers = {
+        "User-Agent": BROWSER_UA,
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Referer": "https://tikwm.com/",
+        "Origin": "https://tikwm.com",
+    }
+
+    req = urllib.request.Request(api, headers=headers)
+
+    with urllib.request.urlopen(req, timeout=25) as r:
         data = json.loads(r.read().decode("utf-8"))
 
     if data.get("code") != 0:
@@ -111,7 +126,7 @@ def resolve_tiktok(url: str, audio_only: bool) -> dict:
 
 
 def resolve_ytdlp(url: str, audio_only: bool, quality: str) -> dict:
-    """YouTube, Rutube, VK, SoundCloud, Reddit и т.д. — через yt-dlp."""
+    """YouTube, Rutube, VK, SoundCloud, Reddit и т.д."""
     opts = {
         "quiet": True,
         "no_warnings": True,
@@ -119,8 +134,11 @@ def resolve_ytdlp(url: str, audio_only: bool, quality: str) -> dict:
         "skip_download": True,
         "noplaylist": True,
         "http_headers": {"User-Agent": USER_AGENT},
+        "retries": 3,
+        "socket_timeout": 20,
     }
 
+    # Cookies (если заданы) — для YouTube / VK / Instagram
     cookies_b64 = os.environ.get("YTDLP_COOKIES_B64")
     if cookies_b64:
         try:
@@ -128,8 +146,8 @@ def resolve_ytdlp(url: str, audio_only: bool, quality: str) -> dict:
             with open(cookies_path, "wb") as f:
                 f.write(base64.b64decode(cookies_b64))
             opts["cookiefile"] = cookies_path
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Cookies decode failed: {e}")
 
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
