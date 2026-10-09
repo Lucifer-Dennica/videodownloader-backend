@@ -1,6 +1,5 @@
 FROM python:3.11-slim
 
-# ffmpeg нужен для обработки потоков
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
