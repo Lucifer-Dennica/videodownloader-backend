@@ -2,5 +2,6 @@ fastapi
 uvicorn[standard]
 pydantic
 fastsaver
-ytagent-cli
+ydpy
+vk-video-downloader
 pybalt
