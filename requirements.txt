@@ -4,3 +4,4 @@ pydantic
 yt-dlp[default,curl-cffi]
 bgutil-ytdlp-pot-provider
 vk-url-scraper
+fastsaver
