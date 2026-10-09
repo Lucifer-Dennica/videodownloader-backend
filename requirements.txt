@@ -2,5 +2,4 @@ fastapi
 uvicorn[standard]
 pydantic
 fastsaver
-vk-parser-x
 dankert-download
