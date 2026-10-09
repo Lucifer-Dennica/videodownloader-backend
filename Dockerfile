@@ -2,6 +2,8 @@ FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -11,7 +13,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
 
-ENV PORT=8000
-EXPOSE 8000
-
-CMD uvicorn app:app --host 0.0.0.0 --port ${PORT}
+# Запускаем POT-провайдер в фоне и сам сервер
+CMD ["sh", "-c", "python -m bgutil_ytdlp_pot_provider & uvicorn app:app --host 0.0.0.0 --port ${PORT}"]
