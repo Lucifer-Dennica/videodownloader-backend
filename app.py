@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from fastsaver import FastSaver, FastSaverError
 
 
-app = FastAPI(title="VideoDownloader Server", version="2.0.0")
+app = FastAPI(title="VideoDownloader Server", version="2.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,14 +15,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Инициализируем клиент FastSaver.
-# API-ключ будет взят из переменной окружения FASTSAVER_API_KEY, которую мы зададим на Render.
+# Инициализация FastSaver
+saver = None
 try:
     saver = FastSaver()
+    print("FastSaver initialized OK")
 except Exception as e:
-    # Если ключ не задан, сервер всё равно запустится, но запросы будут падать с ошибкой.
-    saver = None
-    print(f"FastSaver initialization failed: {e}. Please set FASTSAVER_API_KEY.")
+    print(f"FastSaver init failed: {e}")
 
 
 class ResolveRequest(BaseModel):
@@ -31,52 +30,80 @@ class ResolveRequest(BaseModel):
     quality: str = "max"
 
 
+class InfoRequest(BaseModel):
+    url: str
+
+
+def _build_response(result) -> dict:
+    """Единый формат ответа для info и resolve."""
+    if not result or not result.download_url:
+        raise ValueError("Не удалось получить ссылку на медиа")
+
+    ext = "mp4"
+    if result.type:
+        ext = result.type.split("/")[-1]
+
+    return {
+        "video_url": result.download_url,
+        "thumbnail": result.thumbnail_url,
+        "title": result.caption or "media",
+        "ext": ext,
+        "duration": result.duration,
+        "platform": result.source,
+    }
+
+
 @app.get("/")
 def root():
     return {
         "status": "ok",
-        "service": "VideoDownloader Server (FastSaverAPI)",
-        "endpoints": ["/api/health", "/api/resolve"],
+        "service": "VideoDownloader Server (FastSaver)",
+        "endpoints": ["/api/health", "/api/info", "/api/resolve"],
     }
 
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": "fastsaver"}
+    return {
+        "status": "ok",
+        "service": "fastsaver",
+        "ready": saver is not None,
+    }
+
+
+@app.post("/api/info")
+async def api_info(req: InfoRequest):
+    """
+    Только метаданные для превью (thumbnail, title, duration).
+    Не тратит кредиты на скачивание — FastSaver всё равно только резолвит URL.
+    """
+    if saver is None:
+        raise HTTPException(500, "Сервер не настроен: нет FASTSAVER_API_KEY")
+
+    try:
+        result = saver.fetch(req.url)
+        return _build_response(result)
+    except FastSaverError as e:
+        raise HTTPException(500, f"FastSaver error: {str(e)}")
+    except Exception as e:
+        tb = traceback.format_exc()
+        raise HTTPException(500, f"{type(e).__name__}: {str(e)[:300]}\n{tb[-500:]}")
 
 
 @app.post("/api/resolve")
 async def api_resolve(req: ResolveRequest):
+    """Полный ответ для скачивания."""
     if saver is None:
-        raise HTTPException(500, "Сервер не настроен: отсутствует API-ключ FastSaver.")
+        raise HTTPException(500, "Сервер не настроен: нет FASTSAVER_API_KEY")
 
     try:
-        # FastSaver сам определяет платформу по ссылке.
-        # Для YouTube, TikTok, Rutube, VK, Instagram и других он вернёт прямую ссылку.
-        # Параметр audio_only пока не поддерживается напрямую, но мы можем указать это в запросе.
-        # FastSaver вернёт как видео, так и аудио-ссылки, если они есть.
         result = saver.fetch(req.url)
-
-        # Проверяем, что вернул сервис
-        if not result or not result.download_url:
-            raise ValueError("FastSaver: не удалось получить ссылку на медиа")
-
-        # Формируем ответ в том же формате, что и раньше
-        return {
-            "video_url": result.download_url,
-            "thumbnail": result.thumbnail_url,
-            "title": result.caption or "media",
-            "ext": result.type.split('/')[-1] if result.type else "mp4",  # video/mp4 -> mp4
-            "duration": result.duration,
-            "platform": result.source,  # например, "youtube", "tiktok"
-        }
-
+        return _build_response(result)
     except FastSaverError as e:
-        # Обрабатываем специфичные ошибки FastSaver
         raise HTTPException(500, f"FastSaver error: {str(e)}")
     except Exception as e:
         tb = traceback.format_exc()
-        raise HTTPException(500, f"{type(e).__name__}: {str(e)[:300]}\n{tb[-800:]}")
+        raise HTTPException(500, f"{type(e).__name__}: {str(e)[:300]}\n{tb[-500:]}")
 
 
 if __name__ == "__main__":
