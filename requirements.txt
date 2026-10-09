@@ -2,3 +2,7 @@ fastapi
 uvicorn[standard]
 pydantic
 fastsaver
+ydpy
+vk-video-downloader
+parth-dl
+fdown-api
