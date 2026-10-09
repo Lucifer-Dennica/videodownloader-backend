@@ -1,7 +1,5 @@
 FROM python:3.11-slim
 
-# ffmpeg оставляем на случай, если FastSaver отдаёт отдельные аудио/видео потоки,
-# и для будущих нужд.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
